@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.DS_Store
+my_config.py
+results/
+report/
+*.aux
+*.log
+*.fdb_latexmk
+*.fls
+*.xdv
+*.out

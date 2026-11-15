@@ -1,0 +1,154 @@
+% !TEX program = xelatex
+% 中文分析报告模板（ctexart + XeLaTeX）
+% 编译：latexmk -xelatex report.tex
+%
+% 已经处理好的坑（不要改回去）：
+%   · \setCJKmonofont  —— 否则 \texttt 里的中文会缺字（lmmono 无 CJK）
+%   · 图/表用 center + \captionof（非浮动）—— 避免大图被挤到文末
+%   · \raggedbottom —— 避免非浮动排版产生的巨大段间距
+%   · 不要用 \path{} 包中文路径 —— hyperref 会绕过 CJK 字体映射
+%   · 文件名里的下划线要写成 \_
+\documentclass[UTF8, a4paper, 11pt]{ctexart}
+
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage[hidelinks]{hyperref}
+
+\setCJKmonofont{Songti SC}     % macOS；Windows 用 SimSun，Linux 用 Noto Serif CJK SC
+\setmainfont{Arial}
+\setsansfont{Arial}
+
+\captionsetup{font=small, labelfont=bf, skip=4pt}
+\graphicspath{{../results/figures/pub/}}
+\setlength{\parskip}{0.35em}
+\renewcommand{\arraystretch}{1.15}
+
+\title{\vspace{-1.6cm}\bfseries {{TITLE}}\\[2pt]
+\large {{SUBTITLE}}}
+\author{}
+\date{ {{DATE}} }
+
+\raggedbottom
+\begin{document}
+\maketitle
+\vspace{-0.9cm}
+
+\begin{abstract}
+\noindent
+{{摘要：一句话结论 + 每个突变体组的排序 + 关键倍数 + 仪器一致性。}}
+\end{abstract}
+
+\section{实验设计}
+
+\subsection{孔位布局}
+
+{{说明每组几列、每列几个重复、对照在哪里。}}
+
+\begin{center}
+\captionof{table}{转染板孔位布局。}
+\label{tab:layout}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+行 & 组 1 & 组 2 & 单质粒对照\\
+\midrule
+B & （阴性对照） & （阴性对照） &  \\
+C &  &  &  \\
+D &  &  &  \\
+E &  &  &  \\
+F &  &  &  \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{数据来源}
+
+\begin{itemize}
+  \item \textbf{EVOS 10$\times$}：\texttt{/path/to/EVOS}
+  \item \textbf{Spark 2$\times$}：\texttt{/path/to/Spark}
+\end{itemize}
+
+原始数据只读；分析与出图脚本见 \texttt{scripts/}。
+
+\section{方法}
+
+\subsection{EVOS 图像定量}
+
+全部孔位的曝光与增益一致时可直接比较；否则按曝光$\times$增益归一化。
+照明背景用大窗口中值滤波扣除。每孔计算
+\begin{equation}
+  \text{reporter index}=
+  \frac{\sum_{\text{report mask}}\left(I_{\text{rep}}-B_{\text{rep}}\right)}
+       {\sum_{\text{internal mask}}\left(I_{\text{int}}-B_{\text{int}}\right)} .
+\end{equation}
+
+\subsection{Spark 图像定量}
+
+使用 \texttt{ProcessingPlugin/Images/*\_Processed.tiff}（已做串色矫正与背景扣除），
+以空孔分布的高分位作为阳性阈值，只对超阈值像素积分：
+\begin{equation}
+  \text{index}=\frac{\sum_{I_{\text{rep}}>T_{\text{rep}}} I_{\text{rep}}}
+                     {\sum_{I_{\text{int}}>T_{\text{int}}} I_{\text{int}}} .
+\end{equation}
+
+\subsection{相对活性与统计}
+
+\begin{equation}
+  \text{relative activity (\%)}=
+  \frac{\bar{x}-\bar{x}_{\text{ctrl}}}{\bar{x}_{\text{best}}-\bar{x}_{\text{ctrl}}}\times100 .
+\end{equation}
+每组 $n$ 个复孔；单因素 ANOVA + Welch $t$ 检验（vs 同组对照）。
+
+\section{结果}
+
+\subsection{组 1}
+
+{{文字。}}
+
+\begin{center}
+\includegraphics[width=\textwidth]{{{GROUP1_SCREEN_PDF}}}
+\captionof{figure}{{\textbf{组 1 活性筛查。} a/b/c，三个定量指标；
+d，代表性视野（上：报告基因；下：内参）。柱为平均值，误差线为标准差，
+$n$ 个复孔；$^{*}P<0.05$，$^{**}P<0.01$（Welch $t$）。}}
+\label{fig:g1}
+\end{center}
+
+\input{summary_tables.tex}
+
+\subsection{仪器一致性}
+
+{{Spearman ρ 与判据。}}
+
+\begin{center}
+\includegraphics[width=0.86\textwidth]{validation.pdf}
+\captionof{figure}{{\textbf{仪器一致性与方法可信度。}}}
+\label{fig:valid}
+\end{center}
+
+\section{讨论与局限}
+
+\begin{enumerate}
+  \item {{动态范围、重复性}}
+  \item {{是否有暗对照；能否证明光依赖}}
+  \item {{通道串色核验}}
+  \item {{对照渗漏}}
+  \item {{异常突变体需复核}}
+\end{enumerate}
+
+\section{数据与代码}
+
+脚本 \texttt{01}–\texttt{05} 依序运行即可复现；逐孔数据见
+\texttt{results/*.csv}。
+
+\appendix
+\section{逐孔原始数据}
+
+\input{well_table.tex}
+
+\end{document}
