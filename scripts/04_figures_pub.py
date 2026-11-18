@@ -23,6 +23,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import MaxNLocator
 from scipy import ndimage as ndi
 from scipy import stats
@@ -32,6 +33,11 @@ import common
 
 MM = 1 / 25.4
 W_DOUBLE = 183 * MM
+# 显微图伪彩：报告通道绿、内参通道红；保留暗背景，顶端不趋白
+CMAP_REP = LinearSegmentedColormap.from_list(
+    "rep_green", [(0, "#101010"), (0.55, "#004D2A"), (1, "#00E676")])
+CMAP_INT = LinearSegmentedColormap.from_list(
+    "int_red", [(0, "#101010"), (0.55, "#4D0A0A"), (1, "#FF3B30")])
 
 plt.rcParams.update({
     "font.family": "Arial", "font.size": 7,
@@ -142,59 +148,81 @@ def add_scale_bar(ax, cfg):
             color="white", fontsize=5.5, ha="center", va="bottom")
 
 
-def display_spark(cfg, well, channel):
-    """Spark 2× 全孔展示图：top-hat + 4σ 掩膜叠加，压掉散粒噪声。
-
-    阈值只用于展示；定量仍用原始 Processed 图的积分强度。
-    2× 全孔图像没有可信的像素标定，因此不画 100 µm 标尺。
-    """
+def spark_raw(cfg, well, channel):
+    """Spark 2× 原始 Processed 图：保留背景，只做轻度去噪。"""
     a = common.load_spark_processed(cfg, well, channel)
     h, w = a.shape
     cy, cx = h // 2, w // 2
     half = cfg.get("spark_montage_half", 950)
     a = a[cy - half:cy + half, cx - half:cx + half][::2, ::2]
-    a = ndi.gaussian_filter(a, 1.5)
-    k = cfg.get("spark_tophat_kernel", 13)
-    th = a - ndi.grey_opening(a, size=(k, k))
-    mad = np.median(np.abs(th - np.median(th))) * 1.4826
-    mask = ndi.binary_closing(th > np.median(th) + 4 * mad, iterations=1)
-    mask = ndi.gaussian_filter(mask.astype(np.float32), 0.8)
-    raw = np.clip((a - np.percentile(a, 1)) /
-                  (np.percentile(a, 99.5) - np.percentile(a, 1) + 1e-6), 0, 1)
-    return np.clip(0.25 * raw + 0.85 * mask, 0, 1)
+    a = ndi.median_filter(a, size=3)
+    return ndi.gaussian_filter(a, 1.0)
 
 
-def montage(fig, sub_gs, cfg, group):
+def rep_wells(df, cfg, group, metric):
+    """每个构建选最接近组均值的复孔，避免挑到离群孔。"""
+    g = cfg["groups"][group]
+    means = df[df["group"] == group].groupby("label")[metric].mean()
+    out = []
+    for row in cfg["rows"]:
+        lab = g["labels"].get(row)
+        if lab is None:
+            continue
+        cand = [f"{row}{c}" for c in g["columns"]]
+        sub = df[df["well"].isin(cand)][["well", metric]].dropna()
+        if sub.empty:
+            out.append(cand[0]); continue
+        out.append(sub.iloc[(sub[metric] - means.get(lab, np.nan)).abs()
+                            .argmin()]["well"])
+    return out
+
+
+def montage(fig, sub_gs, cfg, group, df=None, metric=None, annot=None):
     """代表视野跟随主判据仪器：主判据是 Spark 就显示 Spark，是 EVOS 就显示 EVOS。"""
     g = cfg["groups"][group]
     inst = cfg.get("montage_instrument", {}).get(
         group, g.get("primary_instrument", "EVOS"))
     col0 = cfg.get("montage_columns", {}).get(group, g["columns"][0])
     rows = [r for r in cfg["rows"] if r in g["labels"]]
-    wells = [f"{r}{col0}" for r in rows]
+    wells = (rep_wells(df, cfg, group, metric)
+             if df is not None and metric else [f"{r}{col0}" for r in rows])
     y0, y1, x0, x1 = cfg.get("montage_crop", [300, 1200, 380, 1580])
     if inst == "Spark":
         chans = [cfg["spark_channels"]["reporter"],
                  cfg["spark_channels"]["internal"]]
+        imgs = {}
+        for ch in chans:
+            raw = {w: spark_raw(cfg, w, ch) for w in wells}
+            vmax = np.percentile(
+                np.concatenate([a.ravel() for a in raw.values()]),
+                cfg.get("spark_display_pct", 99.0))
+            imgs[ch] = {w: np.clip(a / (vmax + 1e-6), 0, 1)
+                        ** cfg.get("spark_display_gamma", 0.4)
+                        for w, a in raw.items()}
     else:
         chans = [cfg["evos_channels"]["reporter"],
                  cfg["evos_channels"]["internal"]]
+        imgs = {}
 
     first = None
     for c, well in enumerate(wells):
         for r, ch in enumerate(chans):
             ax = fig.add_subplot(sub_gs[r, c])
             if inst == "Spark":
-                img = display_spark(cfg, well, ch)
+                img = imgs[ch][well]
             else:
                 img = display_img(cfg, well, ch)[y0:y1, x0:x1]
-            ax.imshow(img, cmap="gray", vmin=0, vmax=1, aspect="equal")
+            ax.imshow(img, cmap=CMAP_REP if r == 0 else CMAP_INT,
+                      vmin=0, vmax=1, aspect="equal")
             ax.set_xticks([]); ax.set_yticks([])
             for sp in ax.spines.values():
                 sp.set_visible(False)
             if r == 0:
-                ax.set_title(common.short(cfg, g["labels"][rows[c]]),
-                             fontsize=6.5, pad=1.5)
+                lab = g["labels"][rows[c]]
+                title = common.short(cfg, lab)
+                if annot and lab in annot:
+                    title += "\n" + annot[lab]
+                ax.set_title(title, fontsize=5.8, pad=1.2)
             if c == 0:
                 ax.set_ylabel("Reporter" if r == 0 else "Internal",
                               fontsize=6.5, labelpad=1)
@@ -214,9 +242,16 @@ def group_figure(df, summ, cfg, group, panels, out):
         bars(ax, df, cfg, group, metric, ylabel, "abc"[i], summ=summ)
         ax.set_title(title, fontsize=7, pad=4)
     bottom = outer[1].subgridspec(2, len(cfg["rows"]), wspace=0.04, hspace=0.04)
-    montage(fig, bottom, cfg, group)
     inst = cfg.get("montage_instrument", {}).get(
         group, cfg["groups"][group].get("primary_instrument", "EVOS"))
+    metric = "spark_reporter_index" if inst == "Spark" else "reporter_index"
+    ctrl = cfg["groups"][group]["control"]
+    means = df[df["group"] == group].groupby("label")[metric].mean()
+    cm = means.get(ctrl, np.nan)
+    annot = {lab: (f"{v:.3g} ({v / cm:.1f}×WT)" if np.isfinite(cm)
+                   else f"{v:.3g}")
+             for lab, v in means.items()}
+    montage(fig, bottom, cfg, group, df=df, metric=metric, annot=annot)
     fig.text(0.5, 0.012,
              f"Representative fields: {inst} (the primary instrument for this "
              "group). Bars, mean; error bars, s.d.; n = replicate wells; "

@@ -107,7 +107,8 @@ CONFIG = {
     "montage_columns": {"EL222": 2, "PhyB": 5},
     "montage_crop": [300, 1200, 380, 1580],   # EVOS: y0, y1, x0, x1（像素）
     "spark_montage_half": 950,                # Spark: 以孔中心取 2×half 像素
-    "spark_tophat_kernel": 13,                # Spark 展示图去噪核
+    "spark_display_pct": 99.0,                # Spark 展示：组内统一强度上限
+    "spark_display_gamma": 0.4,               # Spark 展示：gamma 提亮
     "scale_bar_um": 100,                      # 仅 EVOS 画；2× 无标定不画
 
     # 报告标题
