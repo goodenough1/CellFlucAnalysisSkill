@@ -59,14 +59,14 @@ CONFIG = {
         "F": "pN1-017",
     },
 
-    # 实验组：每组 = 若干列（重复）+ 行→构建名 + 阴性对照 + 主判据仪器
+    # 实验组：每组 = 若干列（重复）+ 行→构建名 + WT 对照 + 主判据仪器
     "groups": {
         "EL222": {
             "columns": [2, 3, 4],
             "control": "pBApo-EL222",
             "primary_instrument": "EVOS",     # 依据：Spark 绿色对象数 0–2
             "labels": {
-                "B": "pBApo-EL222",           # 阴性对照（无功能 EL222）
+                "B": "pBApo-EL222",           # EL222-WT（野生型对照）
                 "C": "EL222-AQTrip",
                 "D": "EL222-E87D",
                 "E": "EL222-L87I",
@@ -75,7 +75,7 @@ CONFIG = {
         },
         "PhyB": {
             "columns": [5, 6, 7],
-            "control": "pPK-351",             # 空载体
+            "control": "pPK-351",             # PhyB-WT（野生型对照）
             "primary_instrument": "Spark",
             "labels": {
                 "B": "pPK-351",
@@ -89,19 +89,26 @@ CONFIG = {
 
     # ------------------------------------------------------------ 出图/报告
     # 图上用的短名（不填则用原名）
+    # 对照按生物学身份命名，不要写成 "Vector" / "Apo-"：
+    #   pBApo-EL222 → EL222-WT，pPK-351 → PhyB-WT
     "short_names": {
-        "pBApo-EL222": "Apo-EL222", "EL222-AQTrip": "AQTrip",
+        "pBApo-EL222": "EL222-WT", "EL222-AQTrip": "AQTrip",
         "EL222-E87D": "E87D", "EL222-L87I": "L87I", "EL222-G85R": "G85R",
-        "pPK-351": "Vector", "PhyB-S32A": "S32A", "PhyB-E22P": "E22P",
+        "pPK-351": "PhyB-WT", "PhyB-S32A": "S32A", "PhyB-E22P": "E22P",
         "PhyB-S73T": "S73T", "PhyB-E101L": "E101L",
     },
-    # 每组配色（Okabe–Ito 色盲友好）
-    "group_colors": {"EL222": "#D55E00", "PhyB": "#0072B2"},
+    # 每组配色（Okabe–Ito 色盲友好）：EL222 蓝、PhyB 红
+    "group_colors": {"EL222": "#0072B2", "PhyB": "#C0392B"},
     "control_color": "#999999",
+    # 代表视野：默认跟随 primary_instrument（哪台数据下结论就显示哪台）。
+    # 如确需单独指定，用 {"组名": "EVOS"|"Spark"} 覆盖。
+    "montage_instrument": {},
     # 每组代表性视野用的孔（默认取该组第一列 × 每一行）
     "montage_columns": {"EL222": 2, "PhyB": 5},
-    "montage_crop": [300, 1200, 380, 1580],   # y0, y1, x0, x1（像素）
-    "scale_bar_um": 100,
+    "montage_crop": [300, 1200, 380, 1580],   # EVOS: y0, y1, x0, x1（像素）
+    "spark_montage_half": 950,                # Spark: 以孔中心取 2×half 像素
+    "spark_tophat_kernel": 13,                # Spark 展示图去噪核
+    "scale_bar_um": 100,                      # 仅 EVOS 画；2× 无标定不画
 
     # 报告标题
     "report_title": "EL222 与 PhyB 光遗传元件突变体活性筛查",

@@ -142,21 +142,53 @@ def add_scale_bar(ax, cfg):
             color="white", fontsize=5.5, ha="center", va="bottom")
 
 
+def display_spark(cfg, well, channel):
+    """Spark 2× 全孔展示图：top-hat + 4σ 掩膜叠加，压掉散粒噪声。
+
+    阈值只用于展示；定量仍用原始 Processed 图的积分强度。
+    2× 全孔图像没有可信的像素标定，因此不画 100 µm 标尺。
+    """
+    a = common.load_spark_processed(cfg, well, channel)
+    h, w = a.shape
+    cy, cx = h // 2, w // 2
+    half = cfg.get("spark_montage_half", 950)
+    a = a[cy - half:cy + half, cx - half:cx + half][::2, ::2]
+    a = ndi.gaussian_filter(a, 1.5)
+    k = cfg.get("spark_tophat_kernel", 13)
+    th = a - ndi.grey_opening(a, size=(k, k))
+    mad = np.median(np.abs(th - np.median(th))) * 1.4826
+    mask = ndi.binary_closing(th > np.median(th) + 4 * mad, iterations=1)
+    mask = ndi.gaussian_filter(mask.astype(np.float32), 0.8)
+    raw = np.clip((a - np.percentile(a, 1)) /
+                  (np.percentile(a, 99.5) - np.percentile(a, 1) + 1e-6), 0, 1)
+    return np.clip(0.25 * raw + 0.85 * mask, 0, 1)
+
+
 def montage(fig, sub_gs, cfg, group):
+    """代表视野跟随主判据仪器：主判据是 Spark 就显示 Spark，是 EVOS 就显示 EVOS。"""
     g = cfg["groups"][group]
+    inst = cfg.get("montage_instrument", {}).get(
+        group, g.get("primary_instrument", "EVOS"))
     col0 = cfg.get("montage_columns", {}).get(group, g["columns"][0])
     rows = [r for r in cfg["rows"] if r in g["labels"]]
     wells = [f"{r}{col0}" for r in rows]
     y0, y1, x0, x1 = cfg.get("montage_crop", [300, 1200, 380, 1580])
-    ch_rep = cfg["evos_channels"]["reporter"]
-    ch_int = cfg["evos_channels"]["internal"]
+    if inst == "Spark":
+        chans = [cfg["spark_channels"]["reporter"],
+                 cfg["spark_channels"]["internal"]]
+    else:
+        chans = [cfg["evos_channels"]["reporter"],
+                 cfg["evos_channels"]["internal"]]
 
     first = None
     for c, well in enumerate(wells):
-        for r, ch in enumerate([ch_rep, ch_int]):
+        for r, ch in enumerate(chans):
             ax = fig.add_subplot(sub_gs[r, c])
-            ax.imshow(display_img(cfg, well, ch)[y0:y1, x0:x1],
-                      cmap="gray", vmin=0, vmax=1, aspect="equal")
+            if inst == "Spark":
+                img = display_spark(cfg, well, ch)
+            else:
+                img = display_img(cfg, well, ch)[y0:y1, x0:x1]
+            ax.imshow(img, cmap="gray", vmin=0, vmax=1, aspect="equal")
             ax.set_xticks([]); ax.set_yticks([])
             for sp in ax.spines.values():
                 sp.set_visible(False)
@@ -168,7 +200,8 @@ def montage(fig, sub_gs, cfg, group):
                               fontsize=6.5, labelpad=1)
             if first is None:
                 first = ax
-    add_scale_bar(first, cfg)
+    if inst != "Spark":
+        add_scale_bar(first, cfg)
 
 
 # ---------------------------------------------------------------- 各组主图
@@ -182,8 +215,11 @@ def group_figure(df, summ, cfg, group, panels, out):
         ax.set_title(title, fontsize=7, pad=4)
     bottom = outer[1].subgridspec(2, len(cfg["rows"]), wspace=0.04, hspace=0.04)
     montage(fig, bottom, cfg, group)
+    inst = cfg.get("montage_instrument", {}).get(
+        group, cfg["groups"][group].get("primary_instrument", "EVOS"))
     fig.text(0.5, 0.012,
-             "Bars, mean; error bars, s.d.; n = replicate wells; "
+             f"Representative fields: {inst} (the primary instrument for this "
+             "group). Bars, mean; error bars, s.d.; n = replicate wells; "
              "*P < 0.05, **P < 0.01, ***P < 0.001 (Welch t vs control).",
              ha="center", fontsize=6, color="#333333")
     save(fig, out)
